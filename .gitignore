@@ -10,10 +10,8 @@ __pycache__/
 *.pyd
 
 # Environment variables
-.env
 
 # IDE/editor settings
-.vscode/
 .idea/
 
 # Logs
@@ -21,3 +19,5 @@ __pycache__/
 
 # Docker files (optional)
 *.db
+config.bat
+node_modules

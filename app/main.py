@@ -43,22 +43,38 @@ async def rate_and_metrics_middleware(request: Request, call_next):
     start_time = time.time()
     client_ip = request.client.host
     now = datetime.now()
+
+    # Rate limiting
     timestamps = ip_request_log[client_ip]
     ip_request_log[client_ip] = [t for t in timestamps if now - t < RATE_PERIOD]
     if len(ip_request_log[client_ip]) >= RATE_LIMIT:
         return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Try again later."})
     ip_request_log[client_ip].append(now)
+
     try:
         response = await call_next(request)
-    except Exception as e:
-        logger.exception(f"Error while handling request {request.url.path}")
+    except Exception:
         raise
     duration_ms = (time.time() - start_time) * 1000
+
+    # Metrics tracking
     path = request.url.path
     metrics_data[path]["count"] += 1
     metrics_data[path]["total_latency_ms"] += duration_ms
-    logger.info(f"{request.method} {request.url.path} completed in {round(duration_ms, 2)}ms with status {response.status_code}")
+
     return response
+
+@app.get("/metrics")
+def get_metrics():
+    total_requests = 0
+    routes = {}
+    for endpoint, data in metrics_data.items():
+        count = data["count"]
+        avg_latency = data["total_latency_ms"] / max(1, count)
+        routes[endpoint] = {"request_count": count, "average_latency_ms": round(avg_latency, 2)}
+        total_requests += count
+    return {"total_requests": total_requests, "routes": routes}
+
 
 def require_api_key(request: Request):
     key = request.headers.get("x-api-key")
@@ -79,13 +95,7 @@ def healthz():
         logger.error(f"MongoDB ping failed: {e}")
         return {"status": "fail", "mongo": "unreachable"}
 
-@app.get("/metrics")
-def get_metrics():
-    metrics = {}
-    for endpoint, data in metrics_data.items():
-        avg_latency = data["total_latency_ms"] / max(1, data["count"])
-        metrics[endpoint] = {"request_count": data["count"], "average_latency_ms": round(avg_latency, 2)}
-    return metrics
+
 
 @app.get("/")
 def root():
